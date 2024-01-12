@@ -1,4 +1,7 @@
+#![allow(unused)]
+use std::any::Any;
 use std::error::Error;
+use std::process::Command;
 use glob::glob;
 
 pub struct Config {
@@ -16,6 +19,7 @@ impl Config {
     ///     process::exit(1);
     /// });
     /// ```
+    ///
     pub fn build(
         mut args: impl Iterator<Item=String>,
     ) -> Result<Config, &'static str> {
@@ -33,25 +37,13 @@ impl Config {
 
 pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
     println!("{}", config.file);
-    walk_directories().unwrap();
+
+    let tex_files = glob("**/*.rs")?;
+
+    let mut mupdf_instance = Command::new("mupdf")
+        .arg(config.file)
+        .spawn()?;
+    println!("{}", mupdf_instance.id());
+
     Ok(())
 }
-
-fn walk_directories() -> Result<(), Box<dyn Error>> {
-    for entry in glob("**/*.rs")? {
-        println!("{}", entry?.display());
-    }
-
-    Ok(())
-}
-
-
-
-
-
-
-
-
-
-
-

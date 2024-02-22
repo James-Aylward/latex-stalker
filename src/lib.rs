@@ -1,16 +1,15 @@
-#![allow(unused)]
 use std::error::Error;
 use std::fs::File;
-use std::io;
 use std::io::prelude::*;
 use std::path::PathBuf;
 use std::{thread, time};
 use std::process::Command;
-use std::collections::{hash_map, HashMap};
+use std::collections::HashMap;
 use glob::glob;
 
 pub struct Config {
     pub file: String,
+    pub output_file: String,
 }
 
 impl Config {
@@ -35,32 +34,56 @@ impl Config {
             Some(arg) => arg,
             None => return Err("Didn't get a file string"),
         };
+        let output_file = match args.next() {
+            Some(arg) => arg,
+            None => return Err("Didn't get an output file"),
+        };
 
-        Ok(Config { file })
+        Ok(Config { file, output_file })
     }
 }
 
 pub fn run(config: Config) -> Result<(), Box<dyn Error>> {
-    index_files()?;
 
-    let mut mupdf_handle = Command::new("mupdf")
-        .arg(config.file)
+    let mut old_index = index_files()?;
+    let _ = compile_latex(&config.file);
+    let mupdf_handle = Command::new("mupdf")
+        .arg(&config.output_file)
         .spawn()?;
 
-    //thread::sleep(time::Duration::from_secs(1));
+    loop {
+        thread::sleep(time::Duration::from_millis(50));
+        let new_index = index_files()?;
+        if old_index != new_index {
+            println!("Refreshing!");
+            let _ = compile_latex(&config.file);
+            refresh_viewer(mupdf_handle.id());
+            old_index = new_index;
+        }
+    }
+}
 
-    let refresh_command = Command::new("kill")
-        .arg("-HUP")
-        .arg(format!("{}", mupdf_handle.id()))
-        .output();
-
+fn compile_latex(file: &String) -> Result<(), Box<dyn Error>>{
+    let _pdflatex_command = Command::new("pdflatex")
+        .arg("-halt-on-error")
+        .arg("-shell-escape")
+        .arg("-interaction=batchmode")
+        .arg(file)
+        .spawn()?
+        .wait();
     Ok(())
+}
+
+fn refresh_viewer(id: u32) {
+    let _refresh_command = Command::new("kill")
+        .arg("-HUP")
+        .arg(format!("{}", id))
+        .output();
 }
 
 fn index_files() -> Result<HashMap<PathBuf, Vec<u8>>, Box<dyn Error>> {
     let mut footprint: HashMap<PathBuf, Vec<u8>> = HashMap::new();
-
-    for entry in glob("**/*.rs")? {
+    for entry in glob("**/*.tex")? {
         if let Ok(pathbuf) = entry {
             let mut f = File::open(&pathbuf)?;
             let mut b = Vec::new();
@@ -70,8 +93,4 @@ fn index_files() -> Result<HashMap<PathBuf, Vec<u8>>, Box<dyn Error>> {
     }
 
     Ok(footprint)
-}
-
-fn updates_made() -> Result<bool, Box<dyn Error>> {
-    Ok(true)
 }
